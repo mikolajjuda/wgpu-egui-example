@@ -1,4 +1,5 @@
 use bytemuck;
+use oorandom;
 use wgpu::util::DeviceExt;
 use winit::{
     event::*,
@@ -43,20 +44,28 @@ const VERTICES: &[Vertex2dColor] = &[
 const INDICES: &[u16] = &[0, 1, 2];
 
 struct State {
+    // global rendering stuff
     surface: wgpu::Surface,
     surface_config: wgpu::SurfaceConfiguration,
     device: wgpu::Device,
     queue: wgpu::Queue,
     window_size: winit::dpi::PhysicalSize<u32>,
-    background_color: wgpu::Color,
+    // stuff for rendering color triangle
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
+    //stuff for background color
+    background_color: wgpu::Color,
+    rng: oorandom::Rand32,
+    // egui stuff
+    egui: egui::Context,
+    egui_winit_state: egui_winit::State,
+    egui_renderer: egui_wgpu::renderer::Renderer,
 }
 
 impl State {
-    async fn new(window: &Window) -> Self {
+    async fn new(event_loop: &winit::event_loop::EventLoop<()>, window: &Window) -> Self {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::Backends::all());
@@ -83,7 +92,9 @@ impl State {
 
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface.get_supported_formats(&adapter)[0],
+            format: egui_wgpu::preferred_framebuffer_format(
+                surface.get_supported_formats(&adapter).as_slice(),
+            ),
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::AutoVsync,
@@ -150,6 +161,9 @@ impl State {
             multiview: None,
         });
 
+        let egui_renderer =
+            egui_wgpu::renderer::Renderer::new(&device, surface_config.format, None, 1);
+
         State {
             surface: surface,
             surface_config: surface_config,
@@ -162,10 +176,14 @@ impl State {
                 b: 0.3,
                 a: 1.0,
             },
+            rng: oorandom::Rand32::new(2),
             render_pipeline: render_pipeline,
             vertex_buffer: vertex_buffer,
             index_buffer: index_buffer,
             num_indices: INDICES.len() as u32,
+            egui: egui::Context::default(),
+            egui_winit_state: egui_winit::State::new(event_loop),
+            egui_renderer: egui_renderer,
         }
     }
 
@@ -178,13 +196,69 @@ impl State {
         }
     }
 
-    fn input(&mut self, _event: &WindowEvent) -> bool {
+    fn input(&mut self, event: &WindowEvent) -> bool {
+        let response = self.egui_winit_state.on_event(&self.egui, event);
+        if response.consumed {
+            return true;
+        }
+        match event {
+            WindowEvent::KeyboardInput {
+                device_id: _,
+                input,
+                is_synthetic,
+            } => {
+                if !is_synthetic {
+                    #[allow(deprecated)]
+                    let KeyboardInput {
+                        scancode: _,
+                        state,
+                        virtual_keycode,
+                        modifiers,
+                    } = input;
+                    if let Some(key_code) = virtual_keycode {
+                        match key_code {
+                            VirtualKeyCode::Space => {
+                                if *state == ElementState::Pressed && modifiers.is_empty() {
+                                    self.background_color.r = self.rng.rand_float() as f64;
+                                    self.background_color.g = self.rng.rand_float() as f64;
+                                    self.background_color.b = self.rng.rand_float() as f64;
+                                    return true;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
         false
     }
 
     fn update(&mut self) {}
 
-    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    fn ui(&mut self, window: &Window) -> egui::FullOutput {
+        let output = self
+            .egui
+            .run(self.egui_winit_state.take_egui_input(window), |ctx| {
+                egui::Window::new("test window").show(ctx, |ui| {
+                    ui.heading("wgpu and egui integration example");
+                });
+            });
+        self.egui_winit_state.handle_platform_output(
+            window,
+            &self.egui,
+            output.platform_output.to_owned(),
+        );
+        output
+    }
+
+    fn render(
+        &mut self,
+        window: &Window,
+        egui_output: egui::FullOutput,
+    ) -> Result<(), wgpu::SurfaceError> {
+        //stuff for rendering this frame
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -192,6 +266,7 @@ impl State {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        //stuff for rendering triangle
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
@@ -211,7 +286,47 @@ impl State {
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
+        //stuff for rendering egui
+        for (id, image_delta) in egui_output.textures_delta.set {
+            self.egui_renderer
+                .update_texture(&self.device, &self.queue, id, &image_delta);
+        }
+        {
+            let paint_jobs = self.egui.tessellate(egui_output.shapes);
+            let screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
+                size_in_pixels: [self.window_size.width, self.window_size.height],
+                pixels_per_point: window.scale_factor() as f32,
+            };
 
+            self.egui_renderer.update_buffers(
+                &self.device,
+                &self.queue,
+                &mut encoder,
+                &paint_jobs,
+                &screen_descriptor,
+            );
+
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
+
+            self.egui_renderer
+                .render(&mut render_pass, &paint_jobs, &screen_descriptor);
+        }
+        for id in egui_output.textures_delta.free {
+            self.egui_renderer.free_texture(&id);
+        }
+
+        //submitting frame
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
@@ -230,7 +345,7 @@ async fn run() {
         })
         .build(&event_loop)
         .unwrap();
-    let mut state = State::new(&window).await;
+    let mut state = State::new(&event_loop, &window).await;
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
@@ -248,7 +363,8 @@ async fn run() {
         },
         Event::RedrawRequested(window_id) if window_id == window.id() => {
             state.update();
-            match state.render() {
+            let egui_output = state.ui(&window);
+            match state.render(&window, egui_output) {
                 Ok(_) => {}
                 Err(wgpu::SurfaceError::Lost) => state.resize(state.window_size),
                 Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
