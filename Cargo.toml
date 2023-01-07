@@ -5,6 +5,10 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[profile.release]
+strip = true
+lto = true
+
 [dependencies]
 bytemuck = { version = "1.12.3", features = ["derive"] }
 egui = "0.20.1"
