@@ -1,0 +1,29 @@
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+name: web-deploy
+
+jobs:
+  web-deploy:
+    name: Web deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+            profile: minimal
+            toolchain: stable
+            target: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Build
+        run: wasm-pack build --target web
+      - run: ./web/copy_pkg.sh
+      - run: rm ./web/copy_pkg.sh
+      - uses: actions/upload-pages-artifact
+        with:
+          path: web/
+      - uses: actions/deploy-pages
