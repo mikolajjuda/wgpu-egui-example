@@ -20,7 +20,8 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Build
-        run: wasm-pack build --target web && ./web/copy_pkg.sh && rm ./web/copy_pkg.sh
+        run: wasm-pack build --target web
+      - run: ./copy_pkg.sh
       - uses: actions/upload-pages-artifact@v1
         with:
           path: web/
