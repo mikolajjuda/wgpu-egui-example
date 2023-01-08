@@ -1,4 +1,5 @@
 # Example wgpu and egui integration
+[web demo](https://mikolajjuda.github.io/wgpu-egui-example/)
 
 Low level example of using `egui-wgpu` and `egui-winit` to draw `egui` with `wgpu`.
 
