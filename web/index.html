@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+	<title>wgpu and egui integration example</title>
+</head>
+
+<body>
+	<div id="demo">
+		<script type="module">
+			import init from "./pkg/wgpu_egui_example.js";
+			init().then(() => {
+				console.log("WASM Loaded");
+			})
+		</script>
+	</div>
+</body>
+</html>
