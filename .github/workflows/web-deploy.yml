@@ -22,6 +22,8 @@ jobs:
       - name: Build
         run: wasm-pack build --target web
       - run: ./copy_pkg.sh
+      - name: Configure pages
+        uses: actions/configure-pages@v2
       - uses: actions/upload-pages-artifact@v1
         with:
           path: web/
