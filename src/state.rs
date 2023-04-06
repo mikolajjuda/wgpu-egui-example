@@ -13,6 +13,7 @@ pub struct State {
     pub background_state: BackgroundState,
     //gui stuff
     pub gui_state: GuiState,
+    pub should_reconfigure_surface: bool,
 }
 
 impl State {
@@ -67,6 +68,7 @@ impl State {
             window_size: size,
             background_state: background_state,
             gui_state: gui_state,
+            should_reconfigure_surface: true,
         }
     }
 
@@ -75,7 +77,7 @@ impl State {
             self.window_size = new_size;
             self.surface_config.width = new_size.width;
             self.surface_config.height = new_size.height;
-            self.surface.configure(&self.device, &self.surface_config);
+            self.should_reconfigure_surface = true;
         }
     }
 
