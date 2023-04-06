@@ -7,6 +7,9 @@ use winit::{
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+#[cfg(target_arch = "wasm32")]
+use winit::platform::web::WindowExtWebSys;
+
 mod state;
 use state::State;
 mod background_drawing;
@@ -35,7 +38,6 @@ pub async fn run() {
 
     #[cfg(target_arch = "wasm32")]
     {
-        use winit::platform::web::WindowExtWebSys;
         web_sys::window()
             .and_then(|win| win.document())
             .and_then(|doc| {
@@ -68,6 +70,27 @@ pub async fn run() {
             window.request_redraw();
         }
         Event::RedrawRequested(window_id) if window_id == window.id() => {
+            #[cfg(target_arch = "wasm32")]
+            {
+                // this part is ugly and slow, but it works
+                web_sys::window()
+                    .and_then(|win| win.document())
+                    .and_then(|doc| {
+                        let dst = doc.get_element_by_id("demo")?;
+                        if dst.client_height() > 0 && dst.client_width() > 0 {
+                            if dst.client_height() as u32 != state.window_size.height
+                                || dst.client_width() as u32 != state.window_size.width
+                            {
+                                state.resize(winit::dpi::PhysicalSize::<u32>::new(
+                                    dst.client_width() as u32,
+                                    dst.client_height() as u32,
+                                ));
+                                window.set_inner_size(state.window_size);
+                            }
+                        }
+                        Some(())
+                    });
+            }
             if state.should_reconfigure_surface {
                 state
                     .surface

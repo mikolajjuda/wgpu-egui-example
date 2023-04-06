@@ -1,0 +1,7 @@
+#demo {
+    width: 80%;
+    height: 80%;
+    display: block;
+    position: absolute;
+    border: 1px solid;
+}

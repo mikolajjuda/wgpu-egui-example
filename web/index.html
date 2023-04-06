@@ -3,16 +3,16 @@
 <head>
 	<meta charset="UTF-8">
 	<title>wgpu and egui integration example</title>
+	<script type="module" defer>
+		import init from "./pkg/wgpu_egui_example.js";
+		init().then(() => {
+			console.log("WASM Loaded");
+		})
+	</script>
+	<link rel="stylesheet" href="style.css" />
 </head>
-
 <body>
 	<div id="demo">
-		<script type="module">
-			import init from "./pkg/wgpu_egui_example.js";
-			init().then(() => {
-				console.log("WASM Loaded");
-			})
-		</script>
 	</div>
 </body>
 </html>
